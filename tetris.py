@@ -1,24 +1,3 @@
-"""
-Mini Tetris - jogo de terminal usando a biblioteca curses.
-
-Trabalho de Algoritmos e Estruturas de Dados I - o tabuleiro do jogo é
-representado exatamente como visto em aula: uma MATRIZ (lista de listas),
-acessada por tabuleiro[linha][coluna].
-
-Como rodar (Windows):
-    pip install -r requirements.txt
-    python tetris.py
-
-Controles:
-    Setas ou WASD para mover / rotacionar
-    Espaço          -> queda instantânea (hard drop)
-    R               -> ver o ranking dos jogadores (no fim de jogo)
-    N               -> jogar de novo (no fim de jogo)
-    Q               -> sair
-
-O ranking fica salvo no arquivo texto ranking.txt, ao lado deste programa.
-"""
-
 import curses
 import os
 import random
@@ -28,31 +7,21 @@ import time
 # 1. CONSTANTES
 # ---------------------------------------------------------------------------
 
-LARGURA = 10   # número de colunas do tabuleiro
-ALTURA = 18    # número de linhas do tabuleiro (18 em vez de 20 para caber em terminais menores)
+LARGURA = 10
+ALTURA = 18
 
-INTERVALO_QUEDA = 0.5   # segundos entre cada queda automática da peça
-POLL_MS = 50             # tempo (ms) que o curses espera por uma tecla
+INTERVALO_QUEDA = 0.5
+POLL_MS = 50
 
-# Usado nas telas que devem PARAR e esperar o jogador (nome, ranking, aviso de
-# terminal pequeno). Cuidado: nodelay(False) NÃO serve aqui - no PDCurses, que
-# é o curses do Windows, ele limpa só a flag interna e deixa o tempo de espera
-# anterior valendo, então o getch() voltava sozinho depois de POLL_MS e a tela
-# piscava e sumia. timeout(-1) zera as duas coisas e bloqueia de verdade.
 ESPERA_INFINITA = -1
 
-# posição da borda do tabuleiro na tela do terminal
 TOPO = 1
 ESQUERDA = 1
-LARGURA_CELULA = 2   # cada célula é desenhada com 2 caracteres (fica mais "quadrada" no terminal)
+LARGURA_CELULA = 2
 
 # ---------------------------------------------------------------------------
 # 2. PEÇAS (TETROMINÓS)
 # ---------------------------------------------------------------------------
-# Cada peça é uma lista de "estados de rotação". Cada estado é, por sua vez,
-# uma pequena matriz 4x4 de 0s e 1s: outra aplicação direta do conceito de
-# matriz (lista de listas) visto em aula, só que representando a forma da peça
-# em vez de um tabuleiro.
 
 PECAS = {
     "I": [
@@ -147,21 +116,17 @@ PECAS = {
     ],
 }
 
-# ordem fixa das peças -> id numérico (1 a 7), usado tanto para marcar a
-# célula ocupada no tabuleiro quanto para escolher a cor
 ORDEM_PECAS = ["I", "O", "T", "S", "Z", "J", "L"]
 ID_DA_PECA = {tipo: indice + 1 for indice, tipo in enumerate(ORDEM_PECAS)}
 
 PONTOS_POR_LINHAS = {1: 100, 2: 300, 3: 500, 4: 800}
 
-# arquivo texto do ranking, guardado sempre na MESMA pasta do programa (e não
-# na pasta de onde o terminal foi aberto, que pode ser outra)
 ARQUIVO_RANKING = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "ranking.txt"
 )
-SEPARADOR_RANKING = ";"   # separa os campos de cada linha do arquivo
-TAMANHO_MAX_NOME = 12     # mantém o ranking alinhado em colunas
-TOP_RANKING = 10          # quantas partidas aparecem na tela de ranking
+SEPARADOR_RANKING = ";"
+TAMANHO_MAX_NOME = 12
+TOP_RANKING = 10
 
 
 # ---------------------------------------------------------------------------
@@ -169,34 +134,19 @@ TOP_RANKING = 10          # quantas partidas aparecem na tela de ranking
 # ---------------------------------------------------------------------------
 
 def criar_tabuleiro():
-    """Cria a matriz do tabuleiro: uma lista de ALTURA listas de LARGURA zeros.
-
-    IMPORTANTE: usamos uma list comprehension para cada linha (e não
-    `[[0] * LARGURA] * ALTURA`), porque essa segunda forma criaria ALTURA
-    referências para a MESMA lista interna. Nesse caso, alterar uma célula de
-    uma "linha" alteraria todas as outras linhas ao mesmo tempo (aliasing) -
-    um erro clássico ao trabalhar com matrizes em Python.
-    """
     return [[0 for _coluna in range(LARGURA)] for _linha in range(ALTURA)]
 
 
 def forma_da_peca(peca):
-    """Retorna a matriz 4x4 (0/1) correspondente ao estado atual da peça."""
     estados = PECAS[peca["tipo"]]
     return estados[peca["rotacao"] % len(estados)]
 
 
 def posicao_valida(tabuleiro, forma, linha, coluna):
-    """Verifica se a peça (matriz `forma`) cabe no tabuleiro na posição dada.
-
-    Percorre a matriz da peça linha a linha, coluna a coluna. Para cada
-    célula preenchida da peça, calcula a posição correspondente no tabuleiro
-    e confere se ela está dentro dos limites e livre.
-    """
     for i in range(len(forma)):
         for j in range(len(forma[i])):
             if forma[i][j] == 0:
-                continue  # célula vazia da peça, não precisa checar
+                continue
 
             linha_tab = linha + i
             coluna_tab = coluna + j
@@ -206,8 +156,6 @@ def posicao_valida(tabuleiro, forma, linha, coluna):
             if linha_tab >= ALTURA:
                 return False
             if linha_tab < 0:
-                # parte da peça ainda acima do tabuleiro visível (só ocorre
-                # perto do spawn) - não há célula de tabuleiro para checar
                 continue
             if tabuleiro[linha_tab][coluna_tab] != 0:
                 return False
@@ -215,7 +163,6 @@ def posicao_valida(tabuleiro, forma, linha, coluna):
 
 
 def fixar_peca(tabuleiro, peca):
-    """Copia as células da peça para a matriz do tabuleiro (peça "assentou")."""
     forma = forma_da_peca(peca)
     id_peca = ID_DA_PECA[peca["tipo"]]
     for i in range(len(forma)):
@@ -229,10 +176,6 @@ def fixar_peca(tabuleiro, peca):
 
 
 def limpar_linhas(tabuleiro):
-    """Remove linhas completas do tabuleiro e insere linhas vazias no topo.
-
-    Retorna o novo tabuleiro e a quantidade de linhas removidas.
-    """
     linhas_completas = [
         linha for linha in range(ALTURA)
         if all(celula != 0 for celula in tabuleiro[linha])
@@ -255,7 +198,6 @@ def limpar_linhas(tabuleiro):
 # ---------------------------------------------------------------------------
 
 def nova_peca(tipo=None):
-    """Cria uma peça nova, posicionada no topo, centralizada no tabuleiro."""
     if tipo is None:
         tipo = random.choice(ORDEM_PECAS)
     return {
@@ -271,15 +213,14 @@ class Jogo:
         self.nome = nome
         self.tabuleiro = criar_tabuleiro()
         self.peca_atual = nova_peca()
-        self.proxima_peca = nova_peca()   # já sorteada, para mostrar no HUD
+        self.proxima_peca = nova_peca()
         self.pontuacao = 0
         self.game_over = False
         self.ultima_queda = time.time()
-        self.inicio = time.time()         # cronômetro da partida
-        self.tempo_final = None           # congela o tempo no fim de jogo
+        self.inicio = time.time()
+        self.tempo_final = None
 
     def tempo_decorrido(self):
-        """Segundos desde o início da partida (congelados no fim de jogo)."""
         if self.tempo_final is not None:
             return self.tempo_final
         return time.time() - self.inicio
@@ -299,9 +240,6 @@ class Jogo:
         nova_rotacao = (self.peca_atual["rotacao"] + 1) % len(estados)
         forma = estados[nova_rotacao]
 
-        # tenta rotacionar no lugar; se não couber, tenta um pequeno
-        # deslocamento para os lados (um "empurrão" simples, sem a
-        # complexidade de um sistema completo de wall-kick)
         for deslocamento in (0, -1, 1):
             coluna = self.peca_atual["coluna"] + deslocamento
             if posicao_valida(self.tabuleiro, forma, self.peca_atual["linha"], coluna):
@@ -316,7 +254,6 @@ class Jogo:
         if linhas_removidas:
             self.pontuacao += PONTOS_POR_LINHAS.get(linhas_removidas, linhas_removidas * 100)
 
-        # a peça que estava anunciada no HUD entra em jogo e outra é sorteada
         self.peca_atual = self.proxima_peca
         self.proxima_peca = nova_peca()
 
@@ -338,34 +275,19 @@ class Jogo:
 # ---------------------------------------------------------------------------
 # 5. RANKING (PERSISTÊNCIA EM ARQUIVO TEXTO)
 # ---------------------------------------------------------------------------
-# Cada partida vira UMA linha do arquivo, com os campos separados por ";":
-#     NOME;PONTUACAO;TEMPO_EM_SEGUNDOS;DATA
-# Ler e escrever texto simples assim é o suficiente aqui e deixa o arquivo
-# legível em qualquer editor - dá para conferir o ranking sem abrir o jogo.
 
 
 def formatar_tempo(segundos):
-    """Converte segundos em MM:SS, que é como o tempo aparece na tela."""
     segundos = int(segundos)
     return "{:02d}:{:02d}".format(segundos // 60, segundos % 60)
 
 
 def limpar_nome(nome):
-    """Deixa o nome seguro para ir ao arquivo.
-
-    Tira o ";" (que é o separador de campos e quebraria a leitura), corta
-    espaços das pontas e limita o tamanho para o ranking ficar alinhado.
-    """
     nome = nome.replace(SEPARADOR_RANKING, " ").strip()
     return nome[:TAMANHO_MAX_NOME] if nome else "ANONIMO"
 
 
 def salvar_pontuacao(nome, pontuacao, tempo, caminho=ARQUIVO_RANKING):
-    """Acrescenta a partida no fim do arquivo de ranking.
-
-    O modo "a" (append) preserva as partidas anteriores. Se der algum erro de
-    disco/permissão, o jogo não pode quebrar por causa disso: devolve False.
-    """
     linha = SEPARADOR_RANKING.join([
         limpar_nome(nome),
         str(int(pontuacao)),
@@ -374,36 +296,25 @@ def salvar_pontuacao(nome, pontuacao, tempo, caminho=ARQUIVO_RANKING):
     ])
     try:
         with open(caminho, "a", encoding="utf-8") as arquivo:
-            arquivo.write(linha + "\n")   # uma partida por linha
+            arquivo.write(linha + "\n")
         return True
     except OSError:
         return False
 
 
 def carregar_ranking(caminho=ARQUIVO_RANKING):
-    """Lê o arquivo e devolve a lista de partidas JÁ ORDENADA.
-
-    Critério de ordenação (o desempate pedido no enunciado):
-        1º) maior pontuação primeiro;
-        2º) empatou na pontuação? menor tempo primeiro - quem fez os mesmos
-            pontos mais rápido fica na frente.
-
-    Isso é feito com uma chave de ordenação composta: a pontuação entra
-    negada (-pontuacao) para ficar em ordem decrescente, enquanto o tempo
-    entra normal, em ordem crescente.
-    """
     partidas = []
     try:
         with open(caminho, encoding="utf-8") as arquivo:
             for linha in arquivo:
                 campos = linha.strip().split(SEPARADOR_RANKING)
                 if len(campos) < 3:
-                    continue  # linha vazia ou incompleta: ignora
+                    continue
                 try:
                     pontuacao = int(campos[1])
                     tempo = int(campos[2])
                 except ValueError:
-                    continue  # linha corrompida (texto onde devia ter número)
+                    continue
                 partidas.append({
                     "nome": campos[0],
                     "pontuacao": pontuacao,
@@ -411,7 +322,7 @@ def carregar_ranking(caminho=ARQUIVO_RANKING):
                     "data": campos[3] if len(campos) > 3 else "",
                 })
     except FileNotFoundError:
-        return []   # primeira vez que o jogo roda: ainda não há ranking
+        return []
     except OSError:
         return []
 
@@ -420,7 +331,6 @@ def carregar_ranking(caminho=ARQUIVO_RANKING):
 
 
 def linhas_do_ranking(partidas):
-    """Monta o texto do ranking (lista de linhas) a partir das partidas."""
     if not partidas:
         return ["Ainda nao ha partidas salvas."]
 
@@ -458,7 +368,7 @@ def desenhar_celula(stdscr, linha_tela, coluna_tela, id_peca, com_cor):
     try:
         stdscr.addstr(linha_tela, coluna_tela, texto, atributo)
     except curses.error:
-        pass  # terminal pequeno demais para essa posição; ignora e segue
+        pass
 
 
 def desenhar_borda(stdscr):
@@ -474,13 +384,6 @@ def desenhar_borda(stdscr):
 
 
 def desenhar_proxima(stdscr, peca, linha_tela, coluna_tela, com_cor):
-    """Desenha o quadradinho que anuncia a próxima peça.
-
-    A peça é guardada numa matriz 4x4, mas quase sempre sobra linha/coluna
-    vazia em volta. Aqui descobrimos o "retângulo mínimo" que contém as
-    células preenchidas e desenhamos só ele, centralizado na moldura - assim
-    o I e o O aparecem no meio do quadrado, e não jogados num canto.
-    """
     forma = forma_da_peca(peca)
     id_peca = ID_DA_PECA[peca["tipo"]]
 
@@ -495,8 +398,8 @@ def desenhar_proxima(stdscr, peca, linha_tela, coluna_tela, com_cor):
     coluna_min = min(j for _i, j in preenchidas)
     coluna_max = max(j for _i, j in preenchidas)
 
-    colunas_caixa = 4                                  # sempre 4 células de largura
-    linhas_caixa = max(2, linha_max - linha_min + 1)   # altura da maior peça
+    colunas_caixa = 4
+    linhas_caixa = max(2, linha_max - linha_min + 1)
     largura_texto = colunas_caixa * LARGURA_CELULA
 
     try:
@@ -509,7 +412,6 @@ def desenhar_proxima(stdscr, peca, linha_tela, coluna_tela, com_cor):
     except curses.error:
         pass
 
-    # deslocamentos para centralizar a peça dentro da moldura
     desloc_linha = (linhas_caixa - (linha_max - linha_min + 1)) // 2
     desloc_coluna = (colunas_caixa - (coluna_max - coluna_min + 1)) // 2
 
@@ -522,14 +424,13 @@ def desenhar_proxima(stdscr, peca, linha_tela, coluna_tela, com_cor):
             com_cor,
         )
 
-    return linha_tela + linhas_caixa + 2   # primeira linha livre abaixo da moldura
+    return linha_tela + linhas_caixa + 2
 
 
 def desenhar(stdscr, jogo, com_cor):
     stdscr.erase()
     desenhar_borda(stdscr)
 
-    # desenha as peças já assentadas (percorrendo a matriz do tabuleiro)
     for linha in range(ALTURA):
         for coluna in range(LARGURA):
             id_peca = jogo.tabuleiro[linha][coluna]
@@ -541,7 +442,6 @@ def desenhar(stdscr, jogo, com_cor):
                 com_cor,
             )
 
-    # sobrepõe a peça que está caindo (não faz parte da matriz do tabuleiro)
     forma = forma_da_peca(jogo.peca_atual)
     id_peca = ID_DA_PECA[jogo.peca_atual["tipo"]]
     for i in range(len(forma)):
@@ -559,7 +459,6 @@ def desenhar(stdscr, jogo, com_cor):
                     com_cor,
                 )
 
-    # painel de informações (HUD) à direita do tabuleiro
     coluna_hud = ESQUERDA + LARGURA * LARGURA_CELULA + 3
     linhas_hud = [
         "MINI TETRIS",
@@ -576,7 +475,6 @@ def desenhar(stdscr, jogo, com_cor):
         except curses.error:
             pass
 
-    # quadradinho com a peça que entra depois da atual
     linha_ajuda = desenhar_proxima(
         stdscr, jogo.proxima_peca, TOPO + len(linhas_hud), coluna_hud, com_cor
     )
@@ -587,7 +485,6 @@ def desenhar(stdscr, jogo, com_cor):
         "Espaco: queda rapida",
         "Q: sair",
     ]
-    # R e N só valem depois do fim de jogo, então nem aparecem durante a partida
     if jogo.game_over:
         ajuda.insert(3, "R: ranking")
         ajuda.insert(4, "N: jogar de novo")
@@ -607,8 +504,6 @@ def desenhar(stdscr, jogo, com_cor):
             " Q: sair",
         ]
         for indice, mensagem in enumerate(mensagens):
-            # ljust preenche a linha inteira com espaços: sem isso as peças do
-            # tabuleiro continuariam aparecendo no meio do texto
             try:
                 stdscr.addstr(
                     TOPO + ALTURA // 2 - 2 + indice,
@@ -638,7 +533,6 @@ TECLAS_APAGAR = (curses.KEY_BACKSPACE, 8, 127)
 TECLA_ESC = 27
 
 
-# TOPO-1 (borda de cima) até TOPO+ALTURA (borda de baixo) = ALTURA + 2 linhas
 LINHAS_NECESSARIAS = ALTURA + 2
 COLUNAS_NECESSARIAS = ESQUERDA + LARGURA * LARGURA_CELULA + 25
 
@@ -649,12 +543,6 @@ def tamanho_minimo_ok(stdscr):
 
 
 def esperar_terminal_crescer(stdscr):
-    """Fica avisando enquanto a janela for pequena demais.
-
-    Retorna True quando o terminal ficou grande o bastante e False se o
-    jogador desistiu (Q). Sem o refresh() o aviso nunca aparecia na tela e o
-    jogo parecia travado.
-    """
     stdscr.timeout(ESPERA_INFINITA)
     while not tamanho_minimo_ok(stdscr):
         linhas_tela, colunas_tela = stdscr.getmaxyx()
@@ -680,7 +568,6 @@ def esperar_terminal_crescer(stdscr):
 
 
 def escrever_linhas(stdscr, linhas, linha_inicial=1, coluna_inicial=2):
-    """Escreve uma lista de textos, um por linha, cortando o que não couber."""
     _linhas_tela, colunas_tela = stdscr.getmaxyx()
     for indice, texto in enumerate(linhas):
         try:
@@ -694,12 +581,6 @@ def escrever_linhas(stdscr, linhas, linha_inicial=1, coluna_inicial=2):
 
 
 def ler_nome(stdscr):
-    """Tela inicial: pergunta o nome do jogador.
-
-    Monta o nome tecla a tecla (em vez de usar curses.echo/getstr) para poder
-    limitar o tamanho, aceitar backspace e deixar o ESC cancelar o jogo.
-    Devolve o nome já limpo, ou None se o jogador desistir.
-    """
     stdscr.timeout(ESPERA_INFINITA)
     nome = ""
     while True:
@@ -728,11 +609,6 @@ def ler_nome(stdscr):
 
 
 def mostrar_ranking(stdscr, destaque=None):
-    """Mostra o ranking lido do arquivo e espera uma tecla para voltar.
-
-    `destaque` é o nome do jogador da partida recém-terminada, só para ele se
-    achar mais fácil na lista.
-    """
     stdscr.timeout(ESPERA_INFINITA)
     stdscr.erase()
 
@@ -746,28 +622,19 @@ def mostrar_ranking(stdscr, destaque=None):
     escrever_linhas(stdscr, linhas)
     stdscr.refresh()
 
-    # ignora um eventual -1 (nenhuma tecla) e só sai com uma tecla de verdade
     while stdscr.getch() == -1:
         pass
 
-    stdscr.timeout(POLL_MS)   # devolve o modo não-bloqueante usado no jogo
+    stdscr.timeout(POLL_MS)
 
 
 def jogar_partida(stdscr, nome, com_cor):
-    """Joga uma partida inteira, do início até o fim de jogo.
-
-    Devolve True se o jogador pediu para jogar de novo (tecla N) e False se
-    pediu para sair (tecla Q) - main() usa esse retorno para decidir se
-    chama esta função de novo ou encerra o programa.
-    """
     jogo = Jogo(nome)
     pontuacao_salva = False
 
     while True:
         tecla = stdscr.getch()
 
-        # o ranking só abre com a partida encerrada; durante o jogo o R é
-        # ignorado de propósito, para não pausar a partida nem parar o relógio
         if tecla in TECLAS_RANKING and jogo.game_over:
             mostrar_ranking(stdscr, destaque=jogo.nome)
             desenhar(stdscr, jogo, com_cor)
@@ -790,7 +657,6 @@ def jogar_partida(stdscr, nome, com_cor):
                 jogo.queda_automatica()
                 jogo.ultima_queda = agora
 
-        # grava a partida no arquivo assim que o jogo acaba (só uma vez)
         if jogo.game_over and not pontuacao_salva:
             salvar_pontuacao(jogo.nome, jogo.pontuacao, jogo.tempo_decorrido())
             pontuacao_salva = True
@@ -814,10 +680,10 @@ def main(stdscr):
     nome = ler_nome(stdscr)
     if nome is None:
         return
-    stdscr.timeout(POLL_MS)   # ler_nome deixou a entrada bloqueante
+    stdscr.timeout(POLL_MS)
 
     while jogar_partida(stdscr, nome, com_cor):
-        pass   # jogador apertou N: joga outra partida com o mesmo nome
+        pass
 
 
 if __name__ == "__main__":
