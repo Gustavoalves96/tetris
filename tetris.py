@@ -12,7 +12,8 @@ Como rodar (Windows):
 Controles:
     Setas ou WASD para mover / rotacionar
     Espaço          -> queda instantânea (hard drop)
-    R               -> ver o ranking dos jogadores
+    R               -> ver o ranking dos jogadores (no fim de jogo)
+    N               -> jogar de novo (no fim de jogo)
     Q               -> sair
 
 O ranking fica salvo no arquivo texto ranking.txt, ao lado deste programa.
@@ -586,9 +587,10 @@ def desenhar(stdscr, jogo, com_cor):
         "Espaco: queda rapida",
         "Q: sair",
     ]
-    # o R só vale depois do fim de jogo, então nem aparece durante a partida
+    # R e N só valem depois do fim de jogo, então nem aparecem durante a partida
     if jogo.game_over:
         ajuda.insert(3, "R: ranking")
+        ajuda.insert(4, "N: jogar de novo")
     for indice, texto in enumerate(ajuda):
         try:
             stdscr.addstr(linha_ajuda + indice, coluna_hud, texto)
@@ -601,8 +603,8 @@ def desenhar(stdscr, jogo, com_cor):
             " FIM DE JOGO!",
             f" Pontos: {jogo.pontuacao}",
             f" Tempo: {formatar_tempo(jogo.tempo_decorrido())}",
-            " R: ranking",
-            " Q/Enter: sair",
+            " R:ranking N:novo",
+            " Q: sair",
         ]
         for indice, mensagem in enumerate(mensagens):
             # ljust preenche a linha inteira com espaços: sem isso as peças do
@@ -629,6 +631,7 @@ TECLAS_BAIXO = (curses.KEY_DOWN, ord("s"), ord("S"))
 TECLAS_ROTACIONAR = (curses.KEY_UP, ord("w"), ord("W"))
 TECLAS_QUEDA_RAPIDA = (ord(" "),)
 TECLAS_RANKING = (ord("r"), ord("R"))
+TECLAS_JOGAR_DE_NOVO = (ord("n"), ord("N"))
 TECLAS_SAIR = (ord("q"), ord("Q"))
 TECLAS_CONFIRMAR = (curses.KEY_ENTER, 10, 13)
 TECLAS_APAGAR = (curses.KEY_BACKSPACE, 8, 127)
@@ -750,19 +753,13 @@ def mostrar_ranking(stdscr, destaque=None):
     stdscr.timeout(POLL_MS)   # devolve o modo não-bloqueante usado no jogo
 
 
-def main(stdscr):
-    curses.curs_set(0)
-    stdscr.timeout(POLL_MS)
-    com_cor = inicializar_cores()
+def jogar_partida(stdscr, nome, com_cor):
+    """Joga uma partida inteira, do início até o fim de jogo.
 
-    if not esperar_terminal_crescer(stdscr):
-        return
-
-    nome = ler_nome(stdscr)
-    if nome is None:
-        return
-    stdscr.timeout(POLL_MS)   # ler_nome deixou a entrada bloqueante
-
+    Devolve True se o jogador pediu para jogar de novo (tecla N) e False se
+    pediu para sair (tecla Q) - main() usa esse retorno para decidir se
+    chama esta função de novo ou encerra o programa.
+    """
     jogo = Jogo(nome)
     pontuacao_salva = False
 
@@ -801,9 +798,26 @@ def main(stdscr):
         desenhar(stdscr, jogo, com_cor)
 
         if tecla in TECLAS_SAIR:
-            break
-        if jogo.game_over and tecla in TECLAS_CONFIRMAR:
-            break
+            return False
+        if jogo.game_over and tecla in TECLAS_JOGAR_DE_NOVO:
+            return True
+
+
+def main(stdscr):
+    curses.curs_set(0)
+    stdscr.timeout(POLL_MS)
+    com_cor = inicializar_cores()
+
+    if not esperar_terminal_crescer(stdscr):
+        return
+
+    nome = ler_nome(stdscr)
+    if nome is None:
+        return
+    stdscr.timeout(POLL_MS)   # ler_nome deixou a entrada bloqueante
+
+    while jogar_partida(stdscr, nome, com_cor):
+        pass   # jogador apertou N: joga outra partida com o mesmo nome
 
 
 if __name__ == "__main__":
